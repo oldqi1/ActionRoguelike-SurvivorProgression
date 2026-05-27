@@ -119,7 +119,7 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 	// Give points to spend
 	if (SpawnCreditCurve)
 	{
-		AvailableSpawnCredit += SpawnCreditCurve->GetFloatValue(GetWorld()->TimeSeconds);
+		AvailableSpawnCredit += SpawnCreditCurve->GetFloatValue(GetWorld()->TimeSeconds) * GetSpawnCreditMultiplier();
 	}
 
 	if (CooldownBotSpawnUntil > GetWorld()->TimeSeconds)
@@ -140,10 +140,10 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 
 	UE_LOGFMT(LogGame, Log, "Found {number} alive bots.", NrOfAliveBots);
 
-	const float MaxBotCount = 10.0f;
+	const int32 MaxBotCount = GetCurrentMaxBotCount();
 	if (NrOfAliveBots >= MaxBotCount)
 	{
-		UE_LOGFMT(LogGame, Log, "At maximum bot capacity. Skipping bot spawn.");
+		UE_LOGFMT(LogGame, Log, "At maximum bot capacity {AliveBots}/{MaxBots}. Skipping bot spawn.", NrOfAliveBots, MaxBotCount);
 		return;
 	}
 
@@ -339,6 +339,33 @@ void ARogueGameModeBase::RespawnPlayerElapsed(AController* Controller)
 {
 	Controller->UnPossess();
 	RestartPlayer(Controller);
+}
+
+
+int32 ARogueGameModeBase::GetDifficultyLevel() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 0;
+	}
+
+	const float SafeInterval = FMath::Max(1.0f, DifficultyInterval);
+	return FMath::Max(0, FMath::FloorToInt(World->TimeSeconds / SafeInterval));
+}
+
+
+int32 ARogueGameModeBase::GetCurrentMaxBotCount() const
+{
+	const int32 DifficultyLevel = GetDifficultyLevel();
+	return FMath::Max(0, BaseMaxBotCount + DifficultyLevel * MaxBotCountPerDifficulty);
+}
+
+
+float ARogueGameModeBase::GetSpawnCreditMultiplier() const
+{
+	const int32 DifficultyLevel = GetDifficultyLevel();
+	return FMath::Max(0.0f, 1.0f + DifficultyLevel * SpawnCreditDifficultyScale);
 }
 
 

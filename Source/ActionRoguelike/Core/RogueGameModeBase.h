@@ -83,6 +83,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression")
 	int32 ExperiencePerKill = 25;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Difficulty", meta = (ClampMin = "1.0"))
+	float DifficultyInterval = 120.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Difficulty", meta = (ClampMin = "0"))
+	int32 BaseMaxBotCount = 10;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Difficulty", meta = (ClampMin = "0"))
+	int32 MaxBotCountPerDifficulty = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Difficulty", meta = (ClampMin = "0.0"))
+	float SpawnCreditDifficultyScale = 0.2f;
+
 	/* Amount available to start spawning some bots immediately */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI")
 	int32 InitialSpawnCredit = 50.0f;
@@ -133,6 +145,15 @@ protected:
 public:
 
 	virtual void OnActorKilled(AActor* VictimActor, AActor* Killer);
+
+	UFUNCTION(BlueprintCallable, Category = "Difficulty")
+	int32 GetDifficultyLevel() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Difficulty")
+	int32 GetCurrentMaxBotCount() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Difficulty")
+	float GetSpawnCreditMultiplier() const;
 
 	ARogueGameModeBase();
 
