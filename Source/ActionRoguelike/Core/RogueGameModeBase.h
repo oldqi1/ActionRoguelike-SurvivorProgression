@@ -83,6 +83,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression")
 	int32 ExperiencePerKill = 25;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI", meta = (ClampMin = "0.0"))
+	float FallbackSpawnCreditsPerTick = 5.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Difficulty", meta = (ClampMin = "1.0"))
 	float DifficultyInterval = 120.0f;
 

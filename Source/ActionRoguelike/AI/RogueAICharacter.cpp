@@ -237,31 +237,37 @@ void ARogueAICharacter::OnHealthAttributeChanged(float NewValue, const FAttribut
 				ActionComp->StopAllActions();
 
 #if USE_DOD_COIN_PICKUPS
-				// spawn credit loot, spawn a ton of them for stress testing
 				URoguePickupSubsystem* PickupSubsystem = GetWorld()->GetSubsystem<URoguePickupSubsystem>();
-				FVector ActorLoc = GetActorLocation();
-				const FVector CoinOffset = FVector(0,0,55);
-
-				// @todo: reduce to reasonable and psuedo random number, 100 is for testing
-				const int32 SpawnCount = 100;
-				TArray<FVector> CoinLocations;
-				CoinLocations.Reserve(SpawnCount);
-
-				TArray<int32> CoinAmounts;
-				CoinAmounts.Reserve(SpawnCount);
-				
-				for (int i = 0; i < SpawnCount; ++i)
+				UNavigationSystemV1* NavigationSystem = UNavigationSystemV1::GetNavigationSystem(this);
+				if (PickupSubsystem && NavigationSystem)
 				{
-					FNavLocation OutNavLoc;
-					UNavigationSystemV1::GetNavigationSystem(this)->GetRandomPointInNavigableRadius(ActorLoc, 1024, OutNavLoc);
+					FVector ActorLoc = GetActorLocation();
+					const FVector CoinOffset = FVector(0,0,55);
 
-					CoinLocations.Add(OutNavLoc.Location + CoinOffset);
-					//PickupSubsystem->AddCoinsPickup(OutNavLoc.Location + Offset, 10);
-					// @todo: add random amount or grab an amount from the minion data asset
-					CoinAmounts.Add(10);
+					const int32 SpawnCount = FMath::Max(0, CoinDropCount);
+					TArray<FVector> CoinLocations;
+					CoinLocations.Reserve(SpawnCount);
+
+					TArray<int32> CoinAmounts;
+					CoinAmounts.Reserve(SpawnCount);
+				
+					for (int i = 0; i < SpawnCount; ++i)
+					{
+						FNavLocation OutNavLoc;
+						if (!NavigationSystem->GetRandomPointInNavigableRadius(ActorLoc, CoinDropRadius, OutNavLoc))
+						{
+							continue;
+						}
+
+						CoinLocations.Add(OutNavLoc.Location + CoinOffset);
+						CoinAmounts.Add(CreditsPerCoin);
+					}
+
+					if (CoinLocations.Num() > 0)
+					{
+						PickupSubsystem->AddCoinsPickup(CoinLocations, CoinAmounts);
+					}
 				}
-
-				PickupSubsystem->AddCoinsPickup(CoinLocations, CoinAmounts);
 #endif
 
 #if USE_TAGMESSAGING_SYSTEM

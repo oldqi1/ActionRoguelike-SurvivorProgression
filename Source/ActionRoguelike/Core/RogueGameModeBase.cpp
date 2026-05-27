@@ -117,10 +117,12 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 #endif
 
 	// Give points to spend
+	float SpawnCreditsToAdd = FallbackSpawnCreditsPerTick;
 	if (SpawnCreditCurve)
 	{
-		AvailableSpawnCredit += SpawnCreditCurve->GetFloatValue(GetWorld()->TimeSeconds) * GetSpawnCreditMultiplier();
+		SpawnCreditsToAdd = FMath::Max(SpawnCreditsToAdd, SpawnCreditCurve->GetFloatValue(GetWorld()->TimeSeconds));
 	}
+	AvailableSpawnCredit += SpawnCreditsToAdd * GetSpawnCreditMultiplier();
 
 	if (CooldownBotSpawnUntil > GetWorld()->TimeSeconds)
 	{
@@ -150,12 +152,19 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 	// Row to pass along with EQS delegate
 	FMonsterInfoRow* SelectedRow = nullptr;
 
-	// @todo: warn about no monsterrow much earlier in the game and don't even bother arriving here if not set.
-	// Use either DataValidation, asserts, or combination to prevent this from crashing here.
-	//if (MonsterTable)
+	if (!MonsterTable)
+	{
+		UE_LOGFMT(LogGame, Warning, "MonsterTable is not configured. Skipping bot spawn.");
+		return;
+	}
 	
 	TArray<FMonsterInfoRow*> Rows;
 	MonsterTable->GetAllRows("", Rows);
+	if (Rows.Num() == 0)
+	{
+		UE_LOGFMT(LogGame, Warning, "MonsterTable has no rows. Skipping bot spawn.");
+		return;
+	}
 
 	// Get total weight
 	float TotalWeight = 0;
@@ -163,9 +172,14 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 	{
 		TotalWeight += Entry->Weight;
 	}
+	if (TotalWeight <= 0.0f)
+	{
+		UE_LOGFMT(LogGame, Warning, "MonsterTable has no positive spawn weights. Skipping bot spawn.");
+		return;
+	}
 
 	// Random number within total random
-	int32 RandomWeight = FMath::RandRange(0.0f, TotalWeight);
+	const float RandomWeight = FMath::FRandRange(0.0f, TotalWeight);
 
 	//Reset
 	TotalWeight = 0;
@@ -182,7 +196,13 @@ void ARogueGameModeBase::SpawnBotTimerElapsed()
 		}
 	}
 
-	if (SelectedRow && SelectedRow->SpawnCost >= AvailableSpawnCredit)
+	if (!SelectedRow)
+	{
+		UE_LOGFMT(LogGame, Warning, "Failed to select a monster row. Skipping bot spawn.");
+		return;
+	}
+
+	if (SelectedRow->SpawnCost > AvailableSpawnCredit)
 	{
 		// Too expensive to spawn, try again soon
 		CooldownBotSpawnUntil = GetWorld()->TimeSeconds + CooldownTimeBetweenFailures;

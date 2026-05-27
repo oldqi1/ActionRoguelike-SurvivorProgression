@@ -57,6 +57,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category="Effects")
 	TObjectPtr<UAnimMontage> AttackMontage;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 CoinDropCount = 5;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 CreditsPerCoin = 10;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0.0"))
+	float CoinDropRadius = 512.0f;
+
 	void OnHealthAttributeChanged(float NewValue, const FAttributeModification& AttributeModification);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
