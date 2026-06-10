@@ -14,6 +14,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "RoguePlayerController.h"
 #include "RoguePlayerData.h"
+#include "RoguePlayerState.h"
 #include "AI/RogueAICharacter.h"
 #include "Animation/RogueCurveAnimSubsystem.h"
 #include "Blueprint/UserWidget.h"
@@ -99,8 +100,10 @@ void ARoguePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	InputComp->BindAction(PlayerConfig->Input_Jump, ETriggerEvent::Triggered, this, &ACharacter::Jump);
 
 	// Sprint while key is held
-	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Started, this, &ARoguePlayerCharacter::StartActionByTag, SharedGameplayTags::Action_Sprint.GetTag());
-	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Completed, this, &ARoguePlayerCharacter::StopActionByTag, SharedGameplayTags::Action_Sprint.GetTag());
+	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Started, this, &ARoguePlayerCharacter::StartSprintOrDashInput);
+	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Triggered, this, &ARoguePlayerCharacter::UpdateSprintOrDashInput);
+	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Completed, this, &ARoguePlayerCharacter::CompleteSprintOrDashInput);
+	InputComp->BindAction(PlayerConfig->Input_Sprint, ETriggerEvent::Canceled, this, &ARoguePlayerCharacter::CompleteSprintOrDashInput);
 
 	// MKB
 	InputComp->BindAction(PlayerConfig->Input_LookMouse, ETriggerEvent::Triggered, this, &ARoguePlayerCharacter::LookMouse);
@@ -262,6 +265,49 @@ void ARoguePlayerCharacter::StopActionByTag(const FInputActionValue& Instance, c
 }
 
 
+void ARoguePlayerCharacter::StartSprintOrDashInput(const FInputActionInstance& Instance)
+{
+	bSprintInputHeld = true;
+	bSprintActionActive = false;
+}
+
+
+void ARoguePlayerCharacter::UpdateSprintOrDashInput(const FInputActionInstance& Instance)
+{
+	if (!bSprintInputHeld || bSprintActionActive)
+	{
+		return;
+	}
+
+	if (Instance.GetElapsedTime() >= SprintHoldThreshold)
+	{
+		ActionComp->StartActionByName(this, SharedGameplayTags::Action_Sprint.GetTag());
+		bSprintActionActive = true;
+	}
+}
+
+
+void ARoguePlayerCharacter::CompleteSprintOrDashInput(const FInputActionInstance& Instance)
+{
+	if (!bSprintInputHeld)
+	{
+		return;
+	}
+
+	if (bSprintActionActive)
+	{
+		ActionComp->StopActionByName(this, SharedGameplayTags::Action_Sprint.GetTag());
+	}
+	else
+	{
+		ActionComp->StartActionByName(this, SharedGameplayTags::Action_Dash.GetTag());
+	}
+
+	bSprintInputHeld = false;
+	bSprintActionActive = false;
+}
+
+
 void ARoguePlayerCharacter::OnHealthAttributeChanged(float NewValue, const FAttributeModification& AttributeModification)
 {
 	// Damaged
@@ -291,6 +337,14 @@ void ARoguePlayerCharacter::OnHealthAttributeChanged(float NewValue, const FAttr
 	// Died
 	if (NewValue <= 0.0f && AttributeModification.Magnitude < 0.0f)
 	{
+		if (ARoguePlayerState* PS = GetPlayerState<ARoguePlayerState>())
+		{
+			if (PS->TryActivateLastStandShield(ActionComp, this))
+			{
+				return;
+			}
+		}
+
 		UGameplayStatics::PlaySoundAtLocation(this, DeathVOSound, GetActorLocation(), FRotator::ZeroRotator);
 
 		PlayAnimMontage(DeathMontage);

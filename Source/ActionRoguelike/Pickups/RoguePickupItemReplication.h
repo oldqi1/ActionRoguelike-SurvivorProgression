@@ -7,6 +7,13 @@
 
 class URoguePickupSubsystem;
 
+UENUM()
+enum class ERoguePickupVisualType : uint8
+{
+	Coin,
+	Experience
+};
+
 USTRUCT()
 struct FPickupLocationItem : public FFastArraySerializerItem
 {
@@ -50,6 +57,9 @@ struct FPickupLocationsArray: public FFastArraySerializer
 
 	UPROPERTY(NotReplicated)
 	TObjectPtr<URoguePickupSubsystem> OwningSubsystem = nullptr;
+
+	UPROPERTY(NotReplicated)
+	ERoguePickupVisualType VisualType = ERoguePickupVisualType::Coin;
 
 	UPROPERTY()
 	TArray<FPickupLocationItem> Items;

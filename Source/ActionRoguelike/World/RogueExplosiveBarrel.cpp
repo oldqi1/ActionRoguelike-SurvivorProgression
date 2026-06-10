@@ -82,11 +82,9 @@ void ARogueExplosiveBarrel::OnHealthAttributeChanged(float NewValue, const FAttr
 		Explode();
 	}
 	
-	UE_LOG(LogGame, Log, TEXT("OnActorHit in Explosive Barrel"));
-	// Structured Logging Example
-	UE_LOGFMT(LogGame, Warning, "OnActorHit, OtherActor: {name}, at game time: {timeseconds}",
-		("name", GetNameSafe(AttributeModification.Instigator->GetOwner())),
-		("timeseconds", GetWorld()->TimeSeconds));
+	UE_LOGFMT(LogGame, Verbose, "Explosive barrel damage received from {Instigator} at game time {TimeSeconds}.",
+		("Instigator", GetNameSafe(AttributeModification.Instigator.Get())),
+		("TimeSeconds", GetWorld()->TimeSeconds));
 }
 
 
@@ -111,4 +109,3 @@ void ARogueExplosiveBarrel::Explode()
 	//FString CombinedString = FString::Printf(TEXT("Hit at location: %s"), *Hit.ImpactPoint.ToString());
 	//DrawDebugString(GetWorld(), Hit.ImpactPoint, CombinedString, nullptr, FColor::Green, 2.0f, true);
 }
-

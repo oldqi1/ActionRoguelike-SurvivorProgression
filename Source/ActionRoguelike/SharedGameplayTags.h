@@ -16,6 +16,8 @@ namespace SharedGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Stunned);
 	// Damage Context
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Context_Reflected);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Context_KillExplosion);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Context_ChainLightning);
 
 	// Attributes
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attribute_Health);

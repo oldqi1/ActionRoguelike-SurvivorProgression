@@ -40,6 +40,9 @@ public:
 	UPROPERTY(Replicated)
 	FPickupLocationsArray CoinPickupData;
 
+	UPROPERTY(Replicated)
+	FPickupLocationsArray ExperiencePickupData;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 };

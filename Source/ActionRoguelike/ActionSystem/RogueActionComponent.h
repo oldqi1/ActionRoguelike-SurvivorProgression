@@ -94,6 +94,9 @@ protected:
 	UPROPERTY(EditAnywhere, Instanced, NoClear, ReplicatedUsing=OnRep_AttributeSet)
 	TObjectPtr<URogueAttributeSet> AttributeSet;
 
+	UPROPERTY(EditAnywhere, Category = Attributes)
+	bool bRequireAttributeSet = true;
+
 	UFUNCTION()
 	void OnRep_AttributeSet();
 

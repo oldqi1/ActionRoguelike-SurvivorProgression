@@ -33,11 +33,33 @@ void URogueHealthAttributeSet::OnRep_Health(FRogueAttribute OldValue)
 }
 
 
+void URogueHealthAttributeSet::OnRep_HealthMax(FRogueAttribute OldValue)
+{
+	const float NewValue = HealthMax.GetValue();
+
+	FAttributeModification Modification;
+	Modification.AttributeTag = SharedGameplayTags::Attribute_HealthMax;
+	Modification.Magnitude = HealthMax.GetValue() - OldValue.GetValue();
+	Modification.TargetComp = OwningComp;
+
+	OwningComp->BroadcastAttributeChanged(SharedGameplayTags::Attribute_HealthMax, NewValue, Modification);
+
+	// Existing health widgets often only subscribe to Attribute.Health and then query HealthMax.
+	// Broadcast Health again so those widgets refresh after the replicated max value changes.
+	FAttributeModification HealthRefreshModification;
+	HealthRefreshModification.AttributeTag = SharedGameplayTags::Attribute_Health;
+	HealthRefreshModification.Magnitude = 0.0f;
+	HealthRefreshModification.TargetComp = OwningComp;
+	OwningComp->BroadcastAttributeChanged(SharedGameplayTags::Attribute_Health, Health.GetValue(), HealthRefreshModification);
+}
+
+
 void URogueHealthAttributeSet::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(URogueHealthAttributeSet, Health);
+	DOREPLIFETIME(URogueHealthAttributeSet, HealthMax);
 }
 
 // -- Pawn Attribute Set -- //

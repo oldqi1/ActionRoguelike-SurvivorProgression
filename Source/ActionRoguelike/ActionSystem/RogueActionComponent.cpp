@@ -9,6 +9,7 @@
 #include "Core/RogueGameplayFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/ActorChannel.h"
+#include "GameFramework/Pawn.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RogueActionComponent)
 
@@ -28,7 +29,7 @@ URogueActionComponent::URogueActionComponent()
 void URogueActionComponent::InitializeComponent()
 {
 	// Call before Super:: as we verify we haven't initialized yet
-	if (AttributeSet == nullptr)
+	if (AttributeSet == nullptr && bRequireAttributeSet)
 	{
 		AttributeSet = NewObject<URogueAttributeSet>(this, URogueAttributeSet::StaticClass());
 		UE_LOG(LogGame, Warning, TEXT("No default AttributeSet was specified. Set using SetDefaultAttributeSet during Actor construction"
@@ -37,9 +38,12 @@ void URogueActionComponent::InitializeComponent()
 
 	Super::InitializeComponent();
 	
-	InitAttributeSet();
+	if (AttributeSet)
+	{
+		InitAttributeSet();
+	}
 
-	if (GetOwner()->HasAuthority())
+	if (GetOwner()->HasAuthority() && AttributeSet)
 	{
 		AddReplicatedSubObject(AttributeSet);
 	}
@@ -70,7 +74,12 @@ void URogueActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 FRogueAttribute* URogueActionComponent::GetAttribute(FGameplayTag InAttributeTag)
 {
-	check(AttributeSet);
+	if (!AttributeSet)
+	{
+		UE_LOG(LogGame, VeryVerbose, TEXT("Attribute (%s) requested on Actor (%s) without AttributeSet."),
+			*InAttributeTag.ToString(), *GetNameSafe(GetOwner()));
+		return nullptr;
+	}
 		
 	FRogueAttribute** FoundAttribute = AttributeSet->AttributeCache.Find(InAttributeTag);
 	if (FoundAttribute)
@@ -83,7 +92,12 @@ FRogueAttribute* URogueActionComponent::GetAttribute(FGameplayTag InAttributeTag
 
 float URogueActionComponent::GetAttributeValue(FGameplayTag InAttributeTag)
 {
-	check(AttributeSet);
+	if (!AttributeSet)
+	{
+		UE_LOG(LogGame, VeryVerbose, TEXT("Attribute value (%s) requested on Actor (%s) without AttributeSet."),
+			*InAttributeTag.ToString(), *GetNameSafe(GetOwner()));
+		return 0.0f;
+	}
 		
 	FRogueAttribute** FoundAttribute = AttributeSet->AttributeCache.Find(InAttributeTag);
 	if (FoundAttribute)
@@ -102,6 +116,7 @@ bool URogueActionComponent::K2_GetAttribute(FGameplayTag InAttributeTag, float& 
 		CurrentValue = FoundAttribute->GetValue();
 		Base = FoundAttribute->Base;
 		Delta = FoundAttribute->Modifier;
+		return true;
 	}
 
 	return false;
@@ -276,6 +291,12 @@ URogueActionComponent* URogueActionComponent::GetActionComponent(AActor* FromAct
 
 void URogueActionComponent::AddAction(AActor* Instigator, TSubclassOf<URogueAction> ActionClass)
 {
+	if (!ActionClass)
+	{
+		UE_LOGFMT(LogGame, Warning, "AddAction skipped: ActionClass is missing on {Owner}.", GetNameSafe(GetOwner()));
+		return;
+	}
+
 	// Skip for clients
 	if (!GetOwner()->HasAuthority())
 	{
@@ -291,8 +312,8 @@ void URogueActionComponent::AddAction(AActor* Instigator, TSubclassOf<URogueActi
 		// @todo: ActivationTag is not quite suitable for effect descriptions, we use it for now anyway to lookup actions in the cached map
 		FGameplayTag Tag = ActionClass->GetDefaultObject<URogueAction>()->GetActivationTag();
 		
-		// Buffs may not be setting these TAGs yet.
-		if (ensure(Tag.IsValid()))
+		// Effects without activation tags are allowed; they just cannot use tag-based stack lookup.
+		if (Tag.IsValid())
 		{
 			// Effect may not be present
 			if (TObjectPtr<URogueAction>* FoundItem = CachedActions.Find(Tag))
@@ -303,12 +324,6 @@ void URogueActionComponent::AddAction(AActor* Instigator, TSubclassOf<URogueActi
 					return;			
 				}
 			}
-		}
-		else
-		{
-			// Just log and ignore, do not create any additional instance @todo: until we can support multiple debuffs per class with StackedTags
-			UE_LOG(LogGame, Log, TEXT("Ignoring ActionEffect, no ActivationTag present which must be set to identify effects, for now."));
-			//return;
 		}
 	}
 
@@ -323,7 +338,7 @@ void URogueActionComponent::AddAction(AActor* Instigator, TSubclassOf<URogueActi
 	AddReplicatedSubObject(NewAction);
 
 	// Auto start all buffs, if allowed
-	if (bIsEffectClass && ensure(NewAction->CanStart(Instigator)))
+	if (bIsEffectClass && NewAction->CanStart(Instigator))
 	{
 		NewAction->StartAction(Instigator);
 	}
@@ -408,13 +423,17 @@ bool URogueActionComponent::StartActionByName(AActor* Instigator, FGameplayTag A
 		
 		if (!Action->CanStart(Instigator))
 		{
-			FString OwnerName = GetOwner()->GetName();
-			FString FailedMsg = FString::Printf(TEXT("%s - Failed to run: %s"), *OwnerName, *ActionName.ToString());
+			APawn* OwnerPawn = Cast<APawn>(GetOwner());
+			if (OwnerPawn && OwnerPawn->IsPlayerControlled())
+			{
+				FString OwnerName = GetOwner()->GetName();
+				FString FailedMsg = FString::Printf(TEXT("%s - Failed to run: %s"), *OwnerName, *ActionName.ToString());
 
-			// Limits display in viewport to one per actor instance
-			uint64 Key = GetTypeHash(OwnerName);
+				// Limits display in viewport to one per actor instance
+				uint64 Key = GetTypeHash(OwnerName);
 
-			GEngine->AddOnScreenDebugMessage(Key, 2.0f, FColor::Red, FailedMsg);
+				GEngine->AddOnScreenDebugMessage(Key, 2.0f, FColor::Red, FailedMsg);
+			}
 			return false;
 		}
 

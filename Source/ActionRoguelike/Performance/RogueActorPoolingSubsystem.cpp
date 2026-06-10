@@ -51,6 +51,12 @@ bool URogueActorPoolingSubsystem::IsPoolingEnabled(const UObject* WorldContextOb
 
 void URogueActorPoolingSubsystem::PrimeActorPool(TSubclassOf<AActor> ActorClass, int32 Amount)
 {
+	if (!IsPoolingEnabled(this))
+	{
+		UE_LOGFMT(LogGame, Verbose, "Skipping pool priming for {actorclass}: actor pooling is disabled.", GetNameSafe(ActorClass));
+		return;
+	}
+
 	UE_LOGFMT(LogGame, Log, "Priming Pool for {actorclass} ({amount})", GetNameSafe(ActorClass), Amount);
 	SCOPED_NAMED_EVENT(PrimeActorPool, FColor::Blue);
 	

@@ -40,8 +40,12 @@ protected:
 	FTimerHandle PeriodHandle;
 	FTimerHandle DurationHandle;
 
+	TWeakObjectPtr<AActor> PeriodicInstigator;
+
 	UFUNCTION(BlueprintNativeEvent, Category = "Effect")
 	void ExecutePeriodicEffect(AActor* Instigator);
+
+	void ExecutePeriodicEffectFromTimer();
 	
 	void ResetDuration();
 

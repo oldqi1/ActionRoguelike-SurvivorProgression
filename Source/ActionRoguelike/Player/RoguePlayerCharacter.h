@@ -90,6 +90,12 @@ protected:
 	
 	void StopActionByTag(const FInputActionValue& Instance, const FGameplayTag InActionTag);
 
+	void StartSprintOrDashInput(const FInputActionInstance& Instance);
+
+	void UpdateSprintOrDashInput(const FInputActionInstance& Instance);
+
+	void CompleteSprintOrDashInput(const FInputActionInstance& Instance);
+
 	void OnHealthAttributeChanged(float NewValue, const FAttributeModification& AttributeModification);
 
 	virtual void PostInitializeComponents() override;
@@ -129,4 +135,11 @@ protected:
 	FTraceHandle TraceHandle;
 	
 	bool bHasPawnTarget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input", meta = (ClampMin = "0.0"))
+	float SprintHoldThreshold = 0.22f;
+
+	bool bSprintInputHeld = false;
+
+	bool bSprintActionActive = false;
 };

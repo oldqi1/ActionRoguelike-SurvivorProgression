@@ -22,6 +22,8 @@ void ARogueGameState::BeginPlay()
 	ProjectileData.OwningSubsystem = GetWorld()->GetSubsystem<URogueProjectilesSubsystem>();
 
 	CoinPickupData.OwningSubsystem = GetWorld()->GetSubsystem<URoguePickupSubsystem>();
+	ExperiencePickupData.OwningSubsystem = GetWorld()->GetSubsystem<URoguePickupSubsystem>();
+	ExperiencePickupData.VisualType = ERoguePickupVisualType::Experience;
 }
 
 void ARogueGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -30,4 +32,5 @@ void ARogueGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 	DOREPLIFETIME(ARogueGameState, ProjectileData);
 	DOREPLIFETIME(ARogueGameState, CoinPickupData);
+	DOREPLIFETIME(ARogueGameState, ExperiencePickupData);
 }

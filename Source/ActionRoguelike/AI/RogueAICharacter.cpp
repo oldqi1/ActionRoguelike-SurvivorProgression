@@ -17,6 +17,7 @@
 #include "ActionSystem/RogueActionComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Components/AudioComponent.h"
+#include "Core/RogueGameModeBase.h"
 #include "Perception/AISense_Damage.h"
 #include "IAnimationBudgetAllocator.h"
 #include "NavigationSystem.h"
@@ -163,6 +164,12 @@ void ARogueAICharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 
+void ARogueAICharacter::SetExperienceDropAmount(int32 InExperienceDropAmount)
+{
+	ExperienceDropAmount = FMath::Max(0, InExperienceDropAmount);
+}
+
+
 void ARogueAICharacter::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
@@ -236,6 +243,11 @@ void ARogueAICharacter::OnHealthAttributeChanged(float NewValue, const FAttribut
 				// Clears active actions, and (de)buffs.
 				ActionComp->StopAllActions();
 
+				if (ARogueGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARogueGameModeBase>())
+				{
+					GameMode->OnActorKilled(this, InstigatorActor);
+				}
+
 #if USE_DOD_COIN_PICKUPS
 				URoguePickupSubsystem* PickupSubsystem = GetWorld()->GetSubsystem<URoguePickupSubsystem>();
 				UNavigationSystemV1* NavigationSystem = UNavigationSystemV1::GetNavigationSystem(this);
@@ -243,6 +255,7 @@ void ARogueAICharacter::OnHealthAttributeChanged(float NewValue, const FAttribut
 				{
 					FVector ActorLoc = GetActorLocation();
 					const FVector CoinOffset = FVector(0,0,55);
+					const FVector ExperienceOffset = FVector(0,0,75);
 
 					const int32 SpawnCount = FMath::Max(0, CoinDropCount);
 					TArray<FVector> CoinLocations;
@@ -266,6 +279,28 @@ void ARogueAICharacter::OnHealthAttributeChanged(float NewValue, const FAttribut
 					if (CoinLocations.Num() > 0)
 					{
 						PickupSubsystem->AddCoinsPickup(CoinLocations, CoinAmounts);
+					}
+
+					const int32 ExperienceAmount = FMath::Max(0, ExperienceDropAmount);
+					if (ExperienceAmount > 0)
+					{
+						FVector ExperienceLocation = ActorLoc;
+						if (ExperienceDropRadius > 0.0f)
+						{
+							FNavLocation ExperienceNavLoc;
+							if (NavigationSystem->GetRandomPointInNavigableRadius(ActorLoc, ExperienceDropRadius, ExperienceNavLoc))
+							{
+								ExperienceLocation = ExperienceNavLoc.Location;
+							}
+						}
+
+						TArray<FVector> ExperienceLocations;
+						ExperienceLocations.Add(ExperienceLocation + ExperienceOffset);
+
+						TArray<int32> ExperienceAmounts;
+						ExperienceAmounts.Add(ExperienceAmount);
+
+						PickupSubsystem->AddExperiencePickup(ExperienceLocations, ExperienceAmounts);
 					}
 				}
 #endif

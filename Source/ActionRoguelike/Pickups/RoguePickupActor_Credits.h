@@ -23,5 +23,7 @@ protected:
 public:
 	virtual void Interact_Implementation(AController* InstigatorController) override;
 
+	virtual FText GetInteractText_Implementation(AController* InstigatorController) override;
+
 	ARoguePickupActor_Credits();
 };

@@ -58,13 +58,24 @@ protected:
 	TObjectPtr<UAnimMontage> AttackMontage;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0"))
-	int32 CoinDropCount = 5;
+	int32 CoinDropCount = 1;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0"))
-	int32 CreditsPerCoin = 10;
+	int32 CreditsPerCoin = 5;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0.0"))
 	float CoinDropRadius = 512.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 ExperienceDropAmount = 25;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rewards", meta = (ClampMin = "0.0"))
+	float ExperienceDropRadius = 512.0f;
+
+public:
+	void SetExperienceDropAmount(int32 InExperienceDropAmount);
+
+protected:
 
 	void OnHealthAttributeChanged(float NewValue, const FAttributeModification& AttributeModification);
 

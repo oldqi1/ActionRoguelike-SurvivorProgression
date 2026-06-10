@@ -17,6 +17,8 @@ namespace SharedGameplayTags
 
 	// Damage Context
 	UE_DEFINE_GAMEPLAY_TAG(Context_Reflected, "Context.Reflected");
+	UE_DEFINE_GAMEPLAY_TAG(Context_KillExplosion, "Context.KillExplosion");
+	UE_DEFINE_GAMEPLAY_TAG(Context_ChainLightning, "Context.ChainLightning");
 
 	// Attributes
 	UE_DEFINE_GAMEPLAY_TAG(Attribute_Health, "Attribute.Health");

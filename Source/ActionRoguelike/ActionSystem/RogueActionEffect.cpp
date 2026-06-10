@@ -23,10 +23,11 @@ void URogueActionEffect::StartAction_Implementation(AActor* Instigator)
 
 	if (Period > 0.0f)
 	{
-		// Can bind in-line using FTimerDelegate::CreateUObject instead
+		PeriodicInstigator = Instigator;
 		GetWorld()->GetTimerManager().SetTimer(
 			PeriodHandle,
-			FTimerDelegate::CreateUObject(this, &ThisClass::ExecutePeriodicEffect, Instigator),
+			this,
+			&ThisClass::ExecutePeriodicEffectFromTimer,
 			Period,
 			true);
 	}
@@ -37,13 +38,15 @@ void URogueActionEffect::StopAction_Implementation(AActor* Instigator)
 {
 	Super::StopAction_Implementation(Instigator);
 
-	if (GetWorld()->GetTimerManager().GetTimerRemaining(PeriodHandle) < KINDA_SMALL_NUMBER)
+	AActor* SafeInstigator = IsValid(Instigator) ? Instigator : PeriodicInstigator.Get();
+	if (IsValid(SafeInstigator) && GetWorld()->GetTimerManager().GetTimerRemaining(PeriodHandle) < KINDA_SMALL_NUMBER)
 	{
-		ExecutePeriodicEffect(Instigator);
+		ExecutePeriodicEffect(SafeInstigator);
 	}
 
 	GetWorld()->GetTimerManager().ClearTimer(PeriodHandle);
 	GetWorld()->GetTimerManager().ClearTimer(DurationHandle);
+	PeriodicInstigator.Reset();
 
 	URogueActionComponent* Comp = GetOwningComponent();
 	Comp->RemoveAction(this);
@@ -85,3 +88,16 @@ float URogueActionEffect::GetTimeRemaining() const
 
 
 void URogueActionEffect::ExecutePeriodicEffect_Implementation(AActor* Instigator) {}
+
+
+void URogueActionEffect::ExecutePeriodicEffectFromTimer()
+{
+	AActor* SafeInstigator = PeriodicInstigator.Get();
+	if (!IsValid(SafeInstigator))
+	{
+		GetWorld()->GetTimerManager().ClearTimer(PeriodHandle);
+		return;
+	}
+
+	ExecutePeriodicEffect(SafeInstigator);
+}

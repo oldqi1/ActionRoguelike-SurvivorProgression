@@ -176,7 +176,7 @@ protected:
 	UPROPERTY(ReplicatedUsing=OnRep_Health, EditDefaultsOnly, BlueprintReadOnly, Category=Attributes)
 	FRogueAttribute Health;
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Attributes)
+	UPROPERTY(ReplicatedUsing=OnRep_HealthMax, EditDefaultsOnly, BlueprintReadOnly, Category=Attributes)
 	FRogueAttribute HealthMax;
 
 	virtual void PostAttributeChanged() override
@@ -188,6 +188,9 @@ protected:
 
 	UFUNCTION()
 	void OnRep_Health(FRogueAttribute OldValue);
+
+	UFUNCTION()
+	void OnRep_HealthMax(FRogueAttribute OldValue);
 
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 };
@@ -265,4 +268,3 @@ public:
 	
 	URogueMonsterAttributeSet();
 };
-

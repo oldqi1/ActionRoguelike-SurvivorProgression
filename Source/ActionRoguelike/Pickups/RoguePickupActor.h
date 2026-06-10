@@ -46,6 +46,8 @@ protected:
 
 public:
 
+	bool CanAutoPickup() const { return bCanAutoPickup; }
+
 	virtual void PostInitializeComponents() override;
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

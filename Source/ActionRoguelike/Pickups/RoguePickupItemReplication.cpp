@@ -13,16 +13,19 @@ void FPickupLocationsArray::PostReplicatedAdd(const TArrayView<int32>& AddedIndi
 		return;
 	}
 	
-	TArray<FTransform> NewCoinsTMs;
-	NewCoinsTMs.Reserve(AddedIndices.Num());
+	TArray<FTransform> NewTransforms;
+	NewTransforms.Reserve(AddedIndices.Num());
 	
 	for (int Index = 0; Index < AddedIndices.Num(); ++Index)
 	{
 		const FPickupLocationItem Item = Items[AddedIndices[Index]];
-		NewCoinsTMs.Add(FTransform(Item.CoinLocation));
+		const FVector Scale = VisualType == ERoguePickupVisualType::Experience ? FVector(0.35f) : FVector::OneVector;
+		NewTransforms.Add(FTransform(FRotator::ZeroRotator, Item.CoinLocation, Scale));
 	}
 
-	TArray<FPrimitiveInstanceId> NewIDs = OwningSubsystem->AddMeshInstances(NewCoinsTMs);
+	TArray<FPrimitiveInstanceId> NewIDs = VisualType == ERoguePickupVisualType::Experience
+		? OwningSubsystem->AddExperienceMeshInstances(NewTransforms)
+		: OwningSubsystem->AddCoinMeshInstances(NewTransforms);
 
 	// Map all new IDs back into the matching items, to delete them later
 	for (int i = 0; i < AddedIndices.Num(); ++i)
@@ -47,5 +50,12 @@ void FPickupLocationsArray::PreReplicatedRemove(const TArrayView<int32>& Removed
 		IDsToRemove.Add(Items[RemovedIndex].ID);
 	}
 
-	OwningSubsystem->RemoveMeshInstances(IDsToRemove);
+	if (VisualType == ERoguePickupVisualType::Experience)
+	{
+		OwningSubsystem->RemoveExperienceMeshInstances(IDsToRemove);
+	}
+	else
+	{
+		OwningSubsystem->RemoveCoinMeshInstances(IDsToRemove);
+	}
 }

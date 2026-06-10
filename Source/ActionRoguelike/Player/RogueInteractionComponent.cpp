@@ -7,6 +7,7 @@
 #include "Core/RogueGameplayInterface.h"
 #include "DrawDebugHelpers.h"
 #include "Core/RogueGameplayFunctionLibrary.h"
+#include "Pickups/RoguePickupActor.h"
 #include "UI/RogueWorldUserWidget.h"
 #include "Engine/OverlapResult.h"
 
@@ -154,14 +155,19 @@ void URogueInteractionComponent::FindBestInteractable()
 			}
 
 			// Basic implementation, may need interface call to allow custom overrides in highlighted Actors
-			TInlineComponentArray<UStaticMeshComponent*> MeshComps;
-			NewFocusActor->GetComponents(UStaticMeshComponent::StaticClass(), MeshComps);
-			for (UStaticMeshComponent* MeshComp : MeshComps)
+			const ARoguePickupActor* PickupActor = Cast<ARoguePickupActor>(NewFocusActor);
+			const bool bShouldApplyOverlay = !PickupActor || !PickupActor->CanAutoPickup();
+			if (bShouldApplyOverlay)
 			{
-				// Overlay works only as non-nanite, so we just temporarily disable it while highlighted until nanite is entirely disabled in the project
-				MeshComp->bDisallowNanite = true;
-				//MeshComp->bEvaluateWorldPositionOffset = false;
-				MeshComp->SetOverlayMaterial(HighlightOverlayMaterial);
+				TInlineComponentArray<UStaticMeshComponent*> MeshComps;
+				NewFocusActor->GetComponents(UStaticMeshComponent::StaticClass(), MeshComps);
+				for (UStaticMeshComponent* MeshComp : MeshComps)
+				{
+					// Overlay works only as non-nanite, so we just temporarily disable it while highlighted until nanite is entirely disabled in the project
+					MeshComp->bDisallowNanite = true;
+					//MeshComp->bEvaluateWorldPositionOffset = false;
+					MeshComp->SetOverlayMaterial(HighlightOverlayMaterial);
+				}
 			}
 		}
 	}
@@ -203,4 +209,3 @@ void URogueInteractionComponent::ServerInteract_Implementation(AActor* InFocus)
 	AController* MyController = CastChecked<AController>(GetOwner());
 	IRogueGameplayInterface::Execute_Interact(InFocus, MyController);
 }
-

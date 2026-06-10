@@ -11,6 +11,7 @@
 #include "Core/RogueDeveloperSettings.h"
 #include "Core/RogueGameState.h"
 #include "Player/RoguePlayerCharacter.h"
+#include "Player/RoguePlayerState.h"
 #include "ActionRoguelike.h"
 
 
@@ -25,6 +26,7 @@ void URoguePickupSubsystem::AddCoinsPickup(TArray<FVector> Locations, TArray<int
 
 	CoinPickupLocations.Append(Locations);
 	CoinPickupAmount.Append(CoinAmount);
+	CoinPickupAttractTargets.AddDefaulted(Locations.Num());
 
 	// Convert to transforms for ISM
 	TArray<FTransform> Transforms;
@@ -34,7 +36,7 @@ void URoguePickupSubsystem::AddCoinsPickup(TArray<FVector> Locations, TArray<int
 		Transforms.Add(FTransform(Locations[i]));
 	}
 	
-	TArray<FPrimitiveInstanceId> NewMeshIDs = AddMeshInstances(Transforms);
+	TArray<FPrimitiveInstanceId> NewMeshIDs = AddCoinMeshInstances(Transforms);
 	MeshIDs.Append(NewMeshIDs);
 	
 	// Are we playing a networked game
@@ -46,12 +48,61 @@ void URoguePickupSubsystem::AddCoinsPickup(TArray<FVector> Locations, TArray<int
 		// Note: Unclear if we can Append() and mark the items dirty, instead we just add one by one
 		for (int i = 0; i < NewMeshIDs.Num(); ++i)
 		{
-			FPickupLocationItem NewItem = FPickupLocationItem(Locations[i], NewMeshIDs[i]);
-
-			GS->CoinPickupData.Items.Add(NewItem);
+			FPickupLocationItem& NewItem = GS->CoinPickupData.Items.Add_GetRef(FPickupLocationItem(Locations[i], NewMeshIDs[i]));
 			GS->CoinPickupData.MarkItemDirty(NewItem);
 		}
 	}
+}
+
+void URoguePickupSubsystem::AddExperiencePickup(TArray<FVector> Locations, TArray<int32> ExperienceAmount)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(RoguePickupSubsystem::AddExperiencePickup)
+
+	ENetMode NetMode = GetWorld()->GetNetMode();
+	check(GetWorld()->GetNetMode() != NM_Client);
+
+	ExperiencePickupLocations.Append(Locations);
+	ExperiencePickupAmount.Append(ExperienceAmount);
+	ExperiencePickupAttractTargets.AddDefaulted(Locations.Num());
+
+	TArray<FTransform> Transforms;
+	Transforms.Reserve(Locations.Num());
+	for (int i = 0; i < Locations.Num(); ++i)
+	{
+		Transforms.Add(FTransform(FRotator::ZeroRotator, Locations[i], FVector(0.35f)));
+	}
+
+	TArray<FPrimitiveInstanceId> NewMeshIDs = AddExperienceMeshInstances(Transforms);
+	ExperienceMeshIDs.Append(NewMeshIDs);
+
+	if (NetMode > NM_Standalone)
+	{
+		ARogueGameState* GS = GetWorld()->GetGameState<ARogueGameState>();
+
+		for (int i = 0; i < NewMeshIDs.Num(); ++i)
+		{
+			FPickupLocationItem& NewItem = GS->ExperiencePickupData.Items.Add_GetRef(FPickupLocationItem(Locations[i], NewMeshIDs[i]));
+			GS->ExperiencePickupData.MarkItemDirty(NewItem);
+		}
+	}
+}
+
+
+void URoguePickupSubsystem::AddPickupAttractRadiusBonus(float RadiusBonus)
+{
+	if (RadiusBonus <= 0.0f)
+	{
+		return;
+	}
+
+	PickupAttractRadius += RadiusBonus;
+	UE_LOGFMT(LogGame, Log, "Pickup attract radius increased to {Radius}.", PickupAttractRadius);
+}
+
+
+float URoguePickupSubsystem::GetPickupAttractRadius() const
+{
+	return PickupAttractRadius;
 }
 
 
@@ -64,6 +115,7 @@ void URoguePickupSubsystem::RemoveCoinsPickup(int32 InIndex)
 	
 	CoinPickupLocations.RemoveAt(InIndex);
 	CoinPickupAmount.RemoveAt(InIndex);
+	CoinPickupAttractTargets.RemoveAt(InIndex);
 
 	// Playing any networked game, clients should not reach here in the first place
 	if (NetMode > NM_Standalone)
@@ -76,56 +128,119 @@ void URoguePickupSubsystem::RemoveCoinsPickup(int32 InIndex)
 		GS->CoinPickupData.MarkArrayDirty();
 	}
 
-	WorldISM->RemoveInstanceById(MeshIDs[InIndex]);
+	CoinWorldISM->RemoveInstanceById(MeshIDs[InIndex]);
 	MeshIDs.RemoveAt(InIndex);
 }
 
-FPrimitiveInstanceId URoguePickupSubsystem::AddMeshInstance(FVector InLocation)
+void URoguePickupSubsystem::RemoveExperiencePickup(int32 InIndex)
 {
-	// Lazy init
-	if (!IsValid(WorldISM))
+	TRACE_CPUPROFILER_EVENT_SCOPE(RoguePickupSubsystem::RemoveExperiencePickup)
+
+	ENetMode NetMode = GetWorld()->GetNetMode();
+	check(NetMode != NM_Client);
+
+	ExperiencePickupLocations.RemoveAt(InIndex);
+	ExperiencePickupAmount.RemoveAt(InIndex);
+	ExperiencePickupAttractTargets.RemoveAt(InIndex);
+
+	if (NetMode > NM_Standalone)
 	{
-		CreateWorldISM();
+		ARogueGameState* GS = GetWorld()->GetGameState<ARogueGameState>();
+
+		FPrimitiveInstanceId IdToFind = ExperienceMeshIDs[InIndex];
+		GS->ExperiencePickupData.Items.Remove(FPickupLocationItem(FVector::ZeroVector, IdToFind));
+		GS->ExperiencePickupData.MarkArrayDirty();
 	}
-	
-	return WorldISM->AddInstanceById(FTransform(InLocation), true);
+
+	ExperienceWorldISM->RemoveInstanceById(ExperienceMeshIDs[InIndex]);
+	ExperienceMeshIDs.RemoveAt(InIndex);
 }
 
-TArray<FPrimitiveInstanceId> URoguePickupSubsystem::AddMeshInstances(const TArray<FTransform>& InAdded)
+FPrimitiveInstanceId URoguePickupSubsystem::AddCoinMeshInstance(FVector InLocation)
 {
 	// Lazy init
-	if (!IsValid(WorldISM))
+	if (!IsValid(CoinWorldISM))
 	{
-		CreateWorldISM();
+		CreateCoinWorldISM();
+	}
+	
+	return CoinWorldISM->AddInstanceById(FTransform(InLocation), true);
+}
+
+TArray<FPrimitiveInstanceId> URoguePickupSubsystem::AddCoinMeshInstances(const TArray<FTransform>& InAdded)
+{
+	// Lazy init
+	if (!IsValid(CoinWorldISM))
+	{
+		CreateCoinWorldISM();
 	}
 
 	// Batch-add
-	return WorldISM->AddInstancesById(InAdded, true, false);
+	return CoinWorldISM->AddInstancesById(InAdded, true, false);
 }
 
-void URoguePickupSubsystem::RemoveMeshInstances(const TArray<FPrimitiveInstanceId>& IdsToRemove)
+TArray<FPrimitiveInstanceId> URoguePickupSubsystem::AddExperienceMeshInstances(const TArray<FTransform>& InAdded)
 {
-	check(WorldISM);
-	WorldISM->RemoveInstancesById(IdsToRemove, false);
+	if (!IsValid(ExperienceWorldISM))
+	{
+		CreateExperienceWorldISM();
+	}
+
+	return ExperienceWorldISM->AddInstancesById(InAdded, true, false);
+}
+
+void URoguePickupSubsystem::RemoveCoinMeshInstances(const TArray<FPrimitiveInstanceId>& IdsToRemove)
+{
+	check(CoinWorldISM);
+	CoinWorldISM->RemoveInstancesById(IdsToRemove, false);
+}
+
+void URoguePickupSubsystem::RemoveExperienceMeshInstances(const TArray<FPrimitiveInstanceId>& IdsToRemove)
+{
+	check(ExperienceWorldISM);
+	ExperienceWorldISM->RemoveInstancesById(IdsToRemove, false);
 }
 
 
-void URoguePickupSubsystem::CreateWorldISM()
+void URoguePickupSubsystem::CreateCoinWorldISM()
 {
 	UWorld* World = GetWorld();
 
 	// Temp sync loading of the mesh, can hitch
 	UStaticMesh* Mesh = GetDefault<URogueDeveloperSettings>()->PickupCoinMesh.LoadSynchronous();
 		
-	WorldISM = NewObject<UInstancedStaticMeshComponent>(World, NAME_None, RF_Transient);
-	WorldISM->SetStaticMesh(Mesh);
-	WorldISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WorldISM->RegisterComponentWithWorld(World);
+	CoinWorldISM = NewObject<UInstancedStaticMeshComponent>(World, NAME_None, RF_Transient);
+	CoinWorldISM->SetStaticMesh(Mesh);
+	CoinWorldISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CoinWorldISM->RegisterComponentWithWorld(World);
 }
 
 
-void URoguePickupSubsystem::PlayPickupSound()
+void URoguePickupSubsystem::CreateExperienceWorldISM()
 {
+	UWorld* World = GetWorld();
+
+	UStaticMesh* Mesh = GetDefault<URogueDeveloperSettings>()->PickupExperienceMesh.LoadSynchronous();
+	UMaterialInterface* Material = GetDefault<URogueDeveloperSettings>()->PickupExperienceMaterial.LoadSynchronous();
+
+	ExperienceWorldISM = NewObject<UInstancedStaticMeshComponent>(World, NAME_None, RF_Transient);
+	ExperienceWorldISM->SetStaticMesh(Mesh);
+	if (Material)
+	{
+		ExperienceWorldISM->SetMaterial(0, Material);
+	}
+	ExperienceWorldISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ExperienceWorldISM->RegisterComponentWithWorld(World);
+}
+
+
+void URoguePickupSubsystem::PlayCoinPickupSound()
+{
+	if (!IsValid(CoinPickupAudioComp))
+	{
+		return;
+	}
+
 	if (!CoinPickupAudioComp->IsPlaying())
 	{
 		CoinPickupAudioComp->Play();
@@ -134,6 +249,83 @@ void URoguePickupSubsystem::PlayPickupSound()
 	// by repeatedly triggering this event we play a sequence of higher pitched pickups
 	// The metasound handles "resetting" the pitch of the pickup sequence automatically
 	CoinPickupAudioComp->SetTriggerParameter("CoinPickedUp");
+}
+
+void URoguePickupSubsystem::PlayExperiencePickupSound()
+{
+	if (!IsValid(ExperiencePickupAudioComp))
+	{
+		return;
+	}
+
+	if (!ExperiencePickupAudioComp->IsPlaying())
+	{
+		ExperiencePickupAudioComp->Play();
+	}
+}
+
+
+void URoguePickupSubsystem::UpdatePickupAttraction(
+	TArray<FVector>& PickupLocations,
+	TArray<TWeakObjectPtr<ARoguePlayerCharacter>>& AttractTargets,
+	const TArray<ARoguePlayerCharacter*>& PlayerPawns,
+	UInstancedStaticMeshComponent* MeshComponent,
+	const TArray<FPrimitiveInstanceId>& InstanceIDs,
+	float DeltaTime,
+	const FVector& MeshScale) const
+{
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+	const float AttractRadiusSqrd = PickupAttractRadius * PickupAttractRadius;
+
+	for (int32 PickupIndex = 0; PickupIndex < PickupLocations.Num(); ++PickupIndex)
+	{
+		ARoguePlayerCharacter* TargetPawn = AttractTargets[PickupIndex].Get();
+		if (!TargetPawn)
+		{
+			float BestDistanceSqrd = AttractRadiusSqrd;
+			for (ARoguePlayerCharacter* PlayerPawn : PlayerPawns)
+			{
+				if (!PlayerPawn)
+				{
+					continue;
+				}
+
+				const float DistanceSqrd = FVector::DistSquared(PickupLocations[PickupIndex], PlayerPawn->GetActorLocation());
+				if (DistanceSqrd <= BestDistanceSqrd)
+				{
+					BestDistanceSqrd = DistanceSqrd;
+					TargetPawn = PlayerPawn;
+				}
+			}
+
+			AttractTargets[PickupIndex] = TargetPawn;
+		}
+
+		if (!TargetPawn)
+		{
+			continue;
+		}
+
+		const FVector TargetLocation = TargetPawn->GetActorLocation() + FVector(0.0f, 0.0f, 60.0f);
+		PickupLocations[PickupIndex] = FMath::VInterpConstantTo(
+			PickupLocations[PickupIndex],
+			TargetLocation,
+			DeltaTime,
+			PickupAttractSpeed);
+
+		if (InstanceIDs.IsValidIndex(PickupIndex))
+		{
+			MeshComponent->UpdateInstanceTransformById(
+				InstanceIDs[PickupIndex],
+				FTransform(FRotator::ZeroRotator, PickupLocations[PickupIndex], MeshScale),
+				true,
+				false);
+		}
+	}
 }
 
 void URoguePickupSubsystem::Tick(float DeltaTime)
@@ -151,6 +343,7 @@ void URoguePickupSubsystem::Tick(float DeltaTime)
 		TArray<FVector> Players;
 		TArray<ARoguePlayerCharacter*> PlayerPawns;
 		TArray<int32> TotalCoinsPerPlayer;
+		TArray<int32> TotalExperiencePerPlayer;
 		
 		for (ARoguePlayerCharacter* PlayerPawn : TActorRange<ARoguePlayerCharacter>(World))
 		{
@@ -158,60 +351,26 @@ void URoguePickupSubsystem::Tick(float DeltaTime)
 			PlayerPawns.Add(PlayerPawn);
 		}
 
-		// @todo: make this a player configured stat or attribute
-		const float PickupRadius = 200.f;
-		const float PickupRadiusSqrd = PickupRadius * PickupRadius;
+		UpdatePickupAttraction(CoinPickupLocations, CoinPickupAttractTargets, PlayerPawns, CoinWorldISM, MeshIDs, DeltaTime, FVector::OneVector);
+		UpdatePickupAttraction(ExperiencePickupLocations, ExperiencePickupAttractTargets, PlayerPawns, ExperienceWorldISM, ExperienceMeshIDs, DeltaTime, FVector(0.35f));
+
+		const float CollectRadiusSqrd = PickupCollectRadius * PickupCollectRadius;
 
 		// Find pickups and track Coins to grant
 		for (FVector& PlayerLocation : Players)
 		{
 			// Track all pickups that need to be picked up.
 			TArray<int32> ProcessList;
-			
-#if USE_MULTITHREADED_COIN_PICKUPS
-			// Copy array to avoid issues with 
-			TArray<FVector> CoinPickupLocations_Copy(CoinPickupLocations);
-			
-			// Multiple-producer, single consumer queue
-			TMpscQueue<int32> ProcessQueue;
-			
-			// Min batch size is essential for getting any benefit out of doing this async as the per-iteration
-			// cost for this function is so small (just a distance check)
-			const int32 MinBatchSize = 1000;
-			ParallelFor(TEXT("ParallelCoinTick"), CoinPickupLocations_Copy.Num(), MinBatchSize, [&](int32 Index)
-			{
-				// relatively high overhead vs. just distance checking, so it will skew the numbers
-				//TRACE_CPUPROFILER_EVENT_SCOPE(CoinTick::DistanceCheck)
-				
-				float DistSqrd = FVector::DistSquared(CoinPickupLocations_Copy[Index], PlayerLocation);
-				if (DistSqrd < PickupRadiusSqrd)
-				{
-					// Pickups need processing later to avoid messing with cpu cache					
-					ProcessQueue.Enqueue(Index);
-				}
-			});
-			
-			int32 ProcessIndex; 
-			while (ProcessQueue.Dequeue(ProcessIndex))
-			{
-				ProcessList.Add(ProcessIndex);
-			}
-			
-			// Because of the multithreaded loop (and a queue rather than array) we need to first sort to use an inverse-for loop later
-			Algo::Sort(ProcessList);
-			
-#else
-			
+
 			for (int Index = 0; Index < CoinPickupLocations.Num(); ++Index)
 			{
 				float DistSqrd = FVector::DistSquared(CoinPickupLocations[Index], PlayerLocation);
-				if (DistSqrd < PickupRadiusSqrd)
+				if (DistSqrd < CollectRadiusSqrd)
 				{
 					// Bookkeep all pickups that need processing for later
 					ProcessList.Add(Index);
 				}
 			}
-#endif
 			
 			int32 TotalCoins = 0;
 			for (int i = ProcessList.Num() - 1; i >= 0; --i)
@@ -222,6 +381,26 @@ void URoguePickupSubsystem::Tick(float DeltaTime)
 			}
 			
 			TotalCoinsPerPlayer.Add(TotalCoins);
+
+			TArray<int32> ExperienceProcessList;
+			for (int Index = 0; Index < ExperiencePickupLocations.Num(); ++Index)
+			{
+				float DistSqrd = FVector::DistSquared(ExperiencePickupLocations[Index], PlayerLocation);
+				if (DistSqrd < CollectRadiusSqrd)
+				{
+					ExperienceProcessList.Add(Index);
+				}
+			}
+
+			int32 TotalExperience = 0;
+			for (int i = ExperienceProcessList.Num() - 1; i >= 0; --i)
+			{
+				TotalExperience += ExperiencePickupAmount[ExperienceProcessList[i]];
+
+				RemoveExperiencePickup(ExperienceProcessList[i]);
+			}
+
+			TotalExperiencePerPlayer.Add(TotalExperience);
 		}
 
 		// Award each player
@@ -238,7 +417,22 @@ void URoguePickupSubsystem::Tick(float DeltaTime)
 			PlayerPawns[i]->GetActionComponent()->ApplyAttributeChange(Mod);
 
 			// @todo: play sound properly for networked players...eg. they receive these Coins w/ a pickup contextTag
-			PlayPickupSound();
+			PlayCoinPickupSound();
+		}
+
+		for (int i = 0; i < PlayerPawns.Num(); ++i)
+		{
+			int32 AwardAmount = TotalExperiencePerPlayer[i];
+			if (AwardAmount == 0)
+			{
+				continue;
+			}
+
+			if (ARoguePlayerState* PS = PlayerPawns[i]->GetPlayerState<ARoguePlayerState>())
+			{
+				PS->AddExperience(AwardAmount);
+				PlayExperiencePickupSound();
+			}
 		}
 	}
 
@@ -265,13 +459,75 @@ void URoguePickupSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	CoinPickupAudioComp->bAutoActivate = false;
 	CoinPickupAudioComp->RegisterComponentWithWorld(World);
 
-	// Async load the sound
 	FLoadSoftObjectPathAsyncDelegate Delegate;
-	Delegate.BindUObject(this, &ThisClass::OnSoundAssetLoadComplete);
+	Delegate.BindUObject(this, &ThisClass::OnCoinSoundAssetLoadComplete);
 	GetDefault<URogueDeveloperSettings>()->PickupCoinSound.LoadAsync(Delegate);
+
+	ExperiencePickupAudioComp = NewObject<UAudioComponent>(World, NAME_None, RF_Transient);
+	ExperiencePickupAudioComp->bAutoActivate = false;
+	ExperiencePickupAudioComp->RegisterComponentWithWorld(World);
+
+	FLoadSoftObjectPathAsyncDelegate ExperienceDelegate;
+	ExperienceDelegate.BindUObject(this, &ThisClass::OnExperienceSoundAssetLoadComplete);
+	GetDefault<URogueDeveloperSettings>()->PickupExperienceSound.LoadAsync(ExperienceDelegate);
 }
 
-void URoguePickupSubsystem::OnSoundAssetLoadComplete(const FSoftObjectPath& SoftObjectPath, UObject* LoadedObject)
+void URoguePickupSubsystem::Deinitialize()
 {
+	if (IsValid(CoinPickupAudioComp))
+	{
+		CoinPickupAudioComp->Stop();
+		CoinPickupAudioComp->DestroyComponent();
+		CoinPickupAudioComp = nullptr;
+	}
+
+	if (IsValid(ExperiencePickupAudioComp))
+	{
+		ExperiencePickupAudioComp->Stop();
+		ExperiencePickupAudioComp->DestroyComponent();
+		ExperiencePickupAudioComp = nullptr;
+	}
+
+	if (IsValid(CoinWorldISM))
+	{
+		CoinWorldISM->DestroyComponent();
+		CoinWorldISM = nullptr;
+	}
+
+	if (IsValid(ExperienceWorldISM))
+	{
+		ExperienceWorldISM->DestroyComponent();
+		ExperienceWorldISM = nullptr;
+	}
+
+	CoinPickupLocations.Reset();
+	CoinPickupAmount.Reset();
+	CoinPickupAttractTargets.Reset();
+	MeshIDs.Reset();
+	ExperiencePickupLocations.Reset();
+	ExperiencePickupAmount.Reset();
+	ExperiencePickupAttractTargets.Reset();
+	ExperienceMeshIDs.Reset();
+
+	Super::Deinitialize();
+}
+
+void URoguePickupSubsystem::OnCoinSoundAssetLoadComplete(const FSoftObjectPath& SoftObjectPath, UObject* LoadedObject)
+{
+	if (!IsValid(CoinPickupAudioComp))
+	{
+		return;
+	}
+
 	CoinPickupAudioComp->SetSound(Cast<USoundBase>(LoadedObject));
+}
+
+void URoguePickupSubsystem::OnExperienceSoundAssetLoadComplete(const FSoftObjectPath& SoftObjectPath, UObject* LoadedObject)
+{
+	if (!IsValid(ExperiencePickupAudioComp))
+	{
+		return;
+	}
+
+	ExperiencePickupAudioComp->SetSound(Cast<USoundBase>(LoadedObject));
 }

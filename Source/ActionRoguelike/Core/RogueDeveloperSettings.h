@@ -24,6 +24,15 @@ public:
 	UPROPERTY(Config, EditDefaultsOnly, Category = "PickupSubsystem")
 	TSoftObjectPtr<USoundBase> PickupCoinSound;
 
+	UPROPERTY(Config, EditDefaultsOnly, Category = "PickupSubsystem")
+	TSoftObjectPtr<UStaticMesh> PickupExperienceMesh;
+
+	UPROPERTY(Config, EditDefaultsOnly, Category = "PickupSubsystem")
+	TSoftObjectPtr<UMaterialInterface> PickupExperienceMaterial;
+
+	UPROPERTY(Config, EditDefaultsOnly, Category = "PickupSubsystem")
+	TSoftObjectPtr<USoundBase> PickupExperienceSound;
+
 	UPROPERTY(Config, EditDefaultsOnly, Category=UI)
 	TSoftClassPtr<URogueDamageNumberWidget> DamagePopupWidgetClass;
 	

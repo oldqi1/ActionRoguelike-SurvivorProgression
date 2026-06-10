@@ -5,23 +5,52 @@
 
 #include "ActionRoguelike.h"
 #include "RogueGameplayInterface.h"
+#include "RogueGameModeBase.h"
 #include "ShaderPipelineCache.h"
 #include "SharedGameplayTags.h"
 #include "ActionSystem/RogueActionComponent.h"
 #include "ActionSystem/RogueActionSystemInterface.h"
 #include "Engine/OverlapResult.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/RoguePlayerState.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RogueGameplayFunctionLibrary)
 
 
+namespace
+{
+	void TryTriggerChainLightningFromDirectHit(AActor* DamageCauser, AActor* TargetActor, const FGameplayTagContainer& InContextTags)
+	{
+		if (!InContextTags.IsEmpty())
+		{
+			return;
+		}
+
+		APawn* DamageCauserPawn = Cast<APawn>(DamageCauser);
+		ARoguePlayerState* DamageCauserPlayerState = DamageCauserPawn ? DamageCauserPawn->GetPlayerState<ARoguePlayerState>() : nullptr;
+		UWorld* World = DamageCauser ? DamageCauser->GetWorld() : nullptr;
+		ARogueGameModeBase* GameMode = World ? World->GetAuthGameMode<ARogueGameModeBase>() : nullptr;
+		if (DamageCauserPlayerState && DamageCauserPlayerState->HasChainLightningUpgrade() && DamageCauserPlayerState->CanTriggerChainLightningFrom(TargetActor) && GameMode)
+		{
+			GameMode->ApplyChainLightningUpgrade(TargetActor, DamageCauserPawn, DamageCauserPlayerState);
+		}
+	}
+}
+
+
 URogueActionComponent* URogueGameplayFunctionLibrary::GetActionComponentFromActor(AActor* FromActor)
 {
-	if (FromActor == nullptr)
+	if (!IsValid(FromActor))
 	{
 		// ...could easily pass in nullptr from Blueprint
-		UE_LOG(LogGame, Warning, TEXT("Attempting to get Action Component from nullptr Actor."));
+		UE_LOG(LogGame, Warning, TEXT("Attempting to get Action Component from invalid or nullptr Actor: %s"), *GetNameSafe(FromActor));
 		return nullptr;
+	}
+
+	if (URogueActionComponent* ActionComp = FromActor->FindComponentByClass<URogueActionComponent>())
+	{
+		return ActionComp;
 	}
 	
 	// Note: Cast<T> on interface only works if the interface was implemented on the Actor in C++
@@ -49,15 +78,22 @@ bool URogueGameplayFunctionLibrary::IsAlive(AActor* InActor)
 	// Allow nullptr as BP may pass in non exist
 	if (!IsValid(InActor))
 	{
-		UE_LOG(LogGame, Warning, TEXT("Checking IsAlive on invalid or nullptr Actor: %s"), *GetNameSafe(InActor));
 		return false;
 	}
 	
 	URogueActionComponent* ActionComp = GetActionComponentFromActor(InActor);
-	check(ActionComp);
+	if (!ActionComp)
+	{
+		UE_LOG(LogGame, Verbose, TEXT("Checking IsAlive on Actor without ActionComponent: %s"), *GetNameSafe(InActor));
+		return false;
+	}
 
 	FRogueAttribute* FoundAttribute = ActionComp->GetAttribute(SharedGameplayTags::Attribute_Health);
-	check(FoundAttribute);
+	if (!FoundAttribute)
+	{
+		UE_LOG(LogGame, Verbose, TEXT("Checking IsAlive on Actor without Health attribute: %s"), *GetNameSafe(InActor));
+		return false;
+	}
 		
 	return FoundAttribute->GetValue() > 0.0f;
 }
@@ -86,7 +122,7 @@ bool URogueGameplayFunctionLibrary::IsFullHealth(AActor* InActor)
 
 bool URogueGameplayFunctionLibrary::ApplyDamage(AActor* DamageCauser, AActor* TargetActor, float DamageCoefficient, FGameplayTagContainer InContextTags)
 {
-	if (!CanApplyDamage(DamageCauser, TargetActor))
+	if (!CanApplyDamage(DamageCauser, TargetActor, InContextTags))
 	{
 		return false;
 	}
@@ -99,23 +135,22 @@ bool URogueGameplayFunctionLibrary::ApplyDamage(AActor* DamageCauser, AActor* Ta
 		return false;
 	}
 
-	FRogueAttribute* FoundAttribute = InstigatorComp->GetAttribute(SharedGameplayTags::Attribute_AttackDamage);
-	// We might not have implemented the new attributes on every actor yet.
-	if (FoundAttribute == nullptr)
+	const FRogueAttribute* FoundAttribute = InstigatorComp->GetAttribute(SharedGameplayTags::Attribute_AttackDamage);
+	float TotalDamage = DamageCoefficient;
+	if (FoundAttribute)
 	{
-		// "LOGFMT" example
-		UE_LOGFMT(LogGame, Warning, "Actor ({DamageCauser}) has no AttackDamage attribute.",
-			("DamageCauser", DamageCauser->GetName()));
-		return false;
+		// Coefficient is a %, to scale all out damage off the instigator's base attack damage.
+		TotalDamage = FoundAttribute->GetValue() * (DamageCoefficient * 0.01f);
 	}
-
-	// Coefficient is a %, to scale all out damage off the instigator's base attack damage
-	float TotalDamage = FoundAttribute->GetValue() * (DamageCoefficient*0.01f);
+	else
+	{
+		UE_LOG(LogGame, VeryVerbose, TEXT("Actor (%s) has no AttackDamage attribute. Using coefficient %.2f as flat damage."),
+			*GetNameSafe(DamageCauser), DamageCoefficient);
+	}
 
 	URogueActionComponent* VictimComp = GetActionComponentFromActor(TargetActor);
 	if (VictimComp == nullptr)
 	{
-		UE_LOG(LogGame, Warning, TEXT("ApplyDamage Victim (%s) does not contain an ActionComponent."), *GetNameSafe(TargetActor));
 		return false;
 	}
 
@@ -127,20 +162,27 @@ bool URogueGameplayFunctionLibrary::ApplyDamage(AActor* DamageCauser, AActor* Ta
 		EAttributeModifyType::AddBase,
 		InContextTags);
 
-	VictimComp->ApplyAttributeChange(AttriMod);
+	const bool bApplied = VictimComp->ApplyAttributeChange(AttriMod);
+	if (!bApplied)
+	{
+		return false;
+	}
+
 	return true;
 }
 
 
 bool URogueGameplayFunctionLibrary::ApplyDirectionalDamage(AActor* DamageCauser, AActor* TargetActor, float DamageCoefficient, const FHitResult& HitResult, FGameplayTagContainer InContextTags)
 {
-	if (!CanApplyDamage(DamageCauser, TargetActor))
+	if (!CanApplyDamage(DamageCauser, TargetActor, InContextTags))
 	{
 		return false;
 	}
 	
 	if (ApplyDamage(DamageCauser, TargetActor, DamageCoefficient, InContextTags))
 	{
+		TryTriggerChainLightningFromDirectHit(DamageCauser, TargetActor, InContextTags);
+
 		UPrimitiveComponent* HitComp = HitResult.GetComponent();
 
 		ensure(!HitResult.Normal.IsZero());
@@ -154,7 +196,7 @@ bool URogueGameplayFunctionLibrary::ApplyDirectionalDamage(AActor* DamageCauser,
 			bHandled = Interface->AddImpulseAtLocationCustom(Impulse, HitResult.ImpactPoint, HitResult.BoneName);
 		}
 		
-		if (!bHandled && HitComp->bApplyImpulseOnDamage && HitComp->IsSimulatingPhysics(HitResult.BoneName))
+		if (!bHandled && HitComp && HitComp->bApplyImpulseOnDamage && HitComp->IsSimulatingPhysics(HitResult.BoneName))
 		{
 			HitComp->AddImpulseAtLocation(Impulse, HitResult.ImpactPoint, HitResult.BoneName);
 			// Alternative for more consistent defaults as it ignores Mass
@@ -169,10 +211,32 @@ bool URogueGameplayFunctionLibrary::ApplyDirectionalDamage(AActor* DamageCauser,
 bool URogueGameplayFunctionLibrary::CanApplyDamage(AActor* DamageCauser, AActor* TargetActor, FGameplayTagContainer InContextTags)
 {
 	// @todo: verify if damagecauser (aka instigator on projectiles) isnt sometimes nullptr on clients
-	check(DamageCauser);
-	check(IsValid(TargetActor));
-	
-	return TargetActor->CanBeDamaged();
+	if (!IsValid(DamageCauser) || !IsValid(TargetActor))
+	{
+		UE_LOG(LogGame, Warning, TEXT("CanApplyDamage rejected invalid actor. DamageCauser: %s, TargetActor: %s"),
+			*GetNameSafe(DamageCauser), *GetNameSafe(TargetActor));
+		return false;
+	}
+
+	if (!TargetActor->CanBeDamaged())
+	{
+		return false;
+	}
+
+	URogueActionComponent* TargetActionComp = GetActionComponentFromActor(TargetActor);
+	if (!TargetActionComp)
+	{
+		UE_LOG(LogGame, VeryVerbose, TEXT("CanApplyDamage rejected actor without ActionComponent: %s"), *GetNameSafe(TargetActor));
+		return false;
+	}
+
+	if (!TargetActionComp->GetAttribute(SharedGameplayTags::Attribute_Health))
+	{
+		UE_LOG(LogGame, VeryVerbose, TEXT("CanApplyDamage rejected actor without Health attribute: %s"), *GetNameSafe(TargetActor));
+		return false;
+	}
+
+	return true;
 }
 
 /*

@@ -7,9 +7,11 @@
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RoguePickupActor_Credits)
 
 
+#define LOCTEXT_NAMESPACE "InteractableActors"
+
+
 ARoguePickupActor_Credits::ARoguePickupActor_Credits()
 {
-	bCanAutoPickup = true;
 	CreditsAmount = 80;
 }
 
@@ -23,3 +25,11 @@ void ARoguePickupActor_Credits::Interact_Implementation(AController* InstigatorC
 	}
 }
 
+
+FText ARoguePickupActor_Credits::GetInteractText_Implementation(AController* InstigatorController)
+{
+	return FText::Format(LOCTEXT("Credits_InteractMessage", "Pick up {0} credits."), FText::AsNumber(CreditsAmount));
+}
+
+
+#undef LOCTEXT_NAMESPACE

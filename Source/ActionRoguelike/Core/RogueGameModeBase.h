@@ -12,7 +12,11 @@ class UEnvQuery;
 class UEnvQueryInstanceBlueprintWrapper;
 class UCurveFloat;
 class UDataTable;
+class USoundBase;
+class UNiagaraSystem;
 class URogueMonsterData;
+class ARoguePlayerState;
+class ARogueRadiusIndicatorActor;
 
 
 /* DataTable Row for spawning monsters in game mode  */
@@ -102,6 +106,38 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI")
 	int32 InitialSpawnCredit = 50.0f;
 
+	bool bForceContinuousBotSpawning = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression|Upgrades", meta = (ClampMin = "0.0"))
+	float KillExplosionDelay = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression|Upgrades")
+	TSubclassOf<ARogueRadiusIndicatorActor> KillExplosionIndicatorClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression|Upgrades")
+	TObjectPtr<USoundBase> KillExplosionSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression|Upgrades", meta = (ClampMin = "0.0"))
+	float KillExplosionKnockbackStrength = 700.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression|Upgrades", meta = (ClampMin = "0.0"))
+	float KillExplosionUpwardStrength = 250.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression|Upgrades", meta = (ClampMin = "0.0"))
+	float KillExplosionCorpseImpulseStrength = 90000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression|Upgrades")
+	TObjectPtr<UNiagaraSystem> ChainLightningImpactVFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression|Upgrades")
+	TObjectPtr<USoundBase> ChainLightningSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Progression|Upgrades", meta = (ClampMin = "0.0"))
+	float ChainLightningSoundVolume = 0.75f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression|Upgrades")
+	TObjectPtr<UNiagaraSystem> KillExplosionVFX;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Ruleset")
 	bool bAutoRespawnPlayer = false;
 
@@ -126,7 +162,7 @@ protected:
 	
 	void OnBotSpawnQueryCompleted(TSharedPtr<FEnvQueryResult> Result, FMonsterInfoRow* SelectedRow);
 
-	void OnMonsterLoaded(FPrimaryAssetId LoadedId, FVector SpawnLocation);
+	void OnMonsterLoaded(FPrimaryAssetId LoadedId, FVector SpawnLocation, float SpawnCost);
 	
 	void OnPowerupSpawnQueryCompleted(TSharedPtr<FEnvQueryResult> Result);
 
@@ -139,15 +175,47 @@ protected:
 	/* GameTime cooldown to give spawner some time to build up credits */
 	float CooldownBotSpawnUntil = 0;
 
+	float NextSpawnFailureLogTime = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AI", meta = (ClampMin = "0.0"))
+	float SpawnFailureLogInterval = 10.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Fallback Spawn", meta = (ClampMin = "0.0"))
+	float FallbackSpawnMinDistance = 1200.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Fallback Spawn", meta = (ClampMin = "0.0"))
+	float FallbackSpawnMaxDistance = 3200.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Fallback Spawn", meta = (ClampMin = "1"))
+	int32 FallbackSpawnAttempts = 12;
+
 	/* Allow per game mode actor pools and custom amount of primed instances */
 	UPROPERTY(EditDefaultsOnly, Category= "Actor Pooling")
 	TMap<TSubclassOf<AActor>, int32> ActorPoolClasses;
 
 	void RequestPrimedActors();
 
+	void ApplyContinuousSpawningDefaults();
+
+	void LogSpawnFailureThrottled(const TCHAR* Reason, bool bWarning = true);
+
+	bool TryFindFallbackSpawnLocation(FVector& OutLocation) const;
+
+	void RequestMonsterSpawnAtLocation(FMonsterInfoRow* SelectedRow, const FVector& SpawnLocation);
+
+	void ApplyKillExplosionUpgrade(AActor* VictimActor, APawn* KillerPawn, ARoguePlayerState* KillerPlayerState);
+
+	void DetonateKillExplosion(FVector Origin, TWeakObjectPtr<APawn> KillerPawn, TWeakObjectPtr<ARoguePlayerState> KillerPlayerState);
+
+	void PlayChainLightningVFX(const FVector& StartLocation, const FVector& EndLocation) const;
+
+	FTransform MakeGroundProjectedTransform(const FVector& Origin, const AActor* IgnoredActor = nullptr) const;
+
 public:
 
 	virtual void OnActorKilled(AActor* VictimActor, AActor* Killer);
+
+	void ApplyChainLightningUpgrade(AActor* HitActor, APawn* DamageCauserPawn, ARoguePlayerState* DamageCauserPlayerState);
 
 	UFUNCTION(BlueprintCallable, Category = "Difficulty")
 	int32 GetDifficultyLevel() const;
